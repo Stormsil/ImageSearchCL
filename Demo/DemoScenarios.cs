@@ -112,7 +112,7 @@ public static class DemoScenarios
                 }
             };
 
-            capture.Start();
+            capture.StartCapture();
 
             while (!cts.Token.IsCancellationRequested)
             {
@@ -153,7 +153,7 @@ public static class DemoScenarios
                 await Task.Delay(500, cts.Token);
             }
 
-            capture.Stop();
+            capture.StopCapture();
             currentFrame?.Dispose();
         }, cts.Token);
 
