@@ -147,6 +147,111 @@ internal static class TemplateMatchingEngine
     }
 
     /// <summary>
+    /// Searches for all occurrences of a template image within a frame.
+    /// </summary>
+    /// <param name="frame">The frame to search within (haystack).</param>
+    /// <param name="template">The template to search for (needle).</param>
+    /// <param name="confidenceThreshold">Minimum confidence threshold (0.0-1.0).</param>
+    /// <param name="overlapThreshold">Maximum allowed overlap between detections (0.0-1.0). Default: 0.5</param>
+    /// <returns>
+    /// List of MatchResult containing all matches above threshold, sorted by confidence (highest first).
+    /// Returns empty list if no matches found.
+    /// </returns>
+    /// <remarks>
+    /// Uses Non-Maximum Suppression (NMS) to filter overlapping detections.
+    /// Two detections are considered overlapping if their IoU > overlapThreshold.
+    /// </remarks>
+    public static List<MatchResult> FindTemplateAll(
+        Bitmap frame,
+        Bitmap template,
+        double confidenceThreshold,
+        double overlapThreshold = 0.5)
+    {
+        if (frame == null)
+            throw new ArgumentNullException(nameof(frame));
+        if (template == null)
+            throw new ArgumentNullException(nameof(template));
+        if (template.Width > frame.Width || template.Height > frame.Height)
+            throw new ArgumentException(
+                $"Template ({template.Width}x{template.Height}) cannot be larger than frame ({frame.Width}x{frame.Height}).");
+
+        using var frameMat = ConvertToMat(frame);
+        using var templateMat = ConvertToMat(template);
+        using var result = new Mat();
+
+        Cv2.MatchTemplate(frameMat, templateMat, result, TemplateMatchModes.CCoeffNormed);
+
+        // Find all matches above threshold
+        var matches = new List<(OpenCvSharp.Point location, double confidence)>();
+
+        unsafe
+        {
+            var ptr = (float*)result.DataPointer;
+            for (int y = 0; y < result.Rows; y++)
+            {
+                for (int x = 0; x < result.Cols; x++)
+                {
+                    float confidence = ptr[y * result.Cols + x];
+                    if (confidence >= confidenceThreshold)
+                    {
+                        matches.Add((new OpenCvSharp.Point(x, y), confidence));
+                    }
+                }
+            }
+        }
+
+        // Sort by confidence descending
+        matches.Sort((a, b) => b.confidence.CompareTo(a.confidence));
+
+        // Apply Non-Maximum Suppression
+        var results = new List<MatchResult>();
+        foreach (var match in matches)
+        {
+            var rect = new Rectangle(match.location.X, match.location.Y, template.Width, template.Height);
+
+            // Check if this match overlaps significantly with any accepted match
+            bool overlaps = false;
+            foreach (var accepted in results)
+            {
+                var acceptedRect = new Rectangle(accepted.X, accepted.Y, accepted.Width, accepted.Height);
+                if (CalculateIoU(rect, acceptedRect) > overlapThreshold)
+                {
+                    overlaps = true;
+                    break;
+                }
+            }
+
+            if (!overlaps)
+            {
+                results.Add(new MatchResult(
+                    x: match.location.X,
+                    y: match.location.Y,
+                    width: template.Width,
+                    height: template.Height,
+                    confidence: match.confidence
+                ));
+            }
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Calculates Intersection over Union (IoU) between two rectangles.
+    /// </summary>
+    private static double CalculateIoU(Rectangle a, Rectangle b)
+    {
+        var intersection = Rectangle.Intersect(a, b);
+        if (intersection.IsEmpty)
+            return 0.0;
+
+        int intersectionArea = intersection.Width * intersection.Height;
+        int unionArea = (a.Width * a.Height) + (b.Width * b.Height) - intersectionArea;
+
+        return (double)intersectionArea / unionArea;
+    }
+
+    /// <summary>
     /// Converts Bitmap to Mat with proper format handling
     /// </summary>
     private static Mat ConvertToMat(Bitmap bitmap)

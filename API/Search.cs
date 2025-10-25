@@ -126,20 +126,75 @@ public static class Search
     }
 
     /// <summary>
+    /// Begins a fluent search configuration for multiple reference images (multi-template tracking).
+    /// </summary>
+    /// <param name="referenceImages">Array of reference images to track (tries each one).</param>
+    /// <returns>
+    /// SearchBuilder for fluent configuration.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown if <paramref name="referenceImages"/> is null.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown if <paramref name="referenceImages"/> is empty or contains null elements.
+    /// </exception>
+    /// <remarks>
+    /// Template matching tries each image and returns the best match above the confidence threshold.
+    ///
+    /// Use cases:
+    /// - UI element states: Search.ForAny(normalButton, hoverButton, disabledButton)
+    /// - Locale variants: Search.ForAny(enButton, ruButton, zhButton)
+    /// - Theme variations: Search.ForAny(lightTheme, darkTheme)
+    ///
+    /// The caller retains ownership of all ReferenceImages and must dispose them.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// using var normalBtn = ReferenceImage.FromFile("button_normal.png");
+    /// using var hoverBtn = ReferenceImage.FromFile("button_hover.png");
+    /// using var disabledBtn = ReferenceImage.FromFile("button_disabled.png");
+    ///
+    /// using var session = Search.ForAny(normalBtn, hoverBtn, disabledBtn)
+    ///     .WithConfidence(0.85)
+    ///     .In(captureSession);
+    ///
+    /// session.Appeared += (s, r) => Console.WriteLine("Button found (any state)!");
+    /// session.Start();
+    /// </code>
+    /// </example>
+    public static SearchBuilder ForAny(params ReferenceImage[] referenceImages)
+    {
+        if (referenceImages == null)
+            throw new ArgumentNullException(nameof(referenceImages));
+        if (referenceImages.Length == 0)
+            throw new ArgumentException("At least one reference image is required.", nameof(referenceImages));
+        if (referenceImages.Any(img => img == null))
+            throw new ArgumentException("Reference images array contains null elements.", nameof(referenceImages));
+
+        return new SearchBuilder(referenceImages, ownsImages: false);
+    }
+
+    /// <summary>
     /// Fluent builder for configuring and creating tracking sessions.
     /// </summary>
     public sealed class SearchBuilder : IDisposable
     {
-        private readonly ReferenceImage _referenceImage;
-        private readonly bool _ownsImage;
+        private readonly ReferenceImage[] _referenceImages;
+        private readonly bool _ownsImages;
         private double _confidenceThreshold = 0.8;
         private double _movementThreshold = 5.0;
         private bool _disposed;
 
         internal SearchBuilder(ReferenceImage referenceImage, bool ownsImage)
         {
-            _referenceImage = referenceImage;
-            _ownsImage = ownsImage;
+            _referenceImages = new[] { referenceImage };
+            _ownsImages = ownsImage;
+        }
+
+        internal SearchBuilder(ReferenceImage[] referenceImages, bool ownsImages)
+        {
+            _referenceImages = referenceImages;
+            _ownsImages = ownsImages;
         }
 
         /// <summary>
@@ -236,7 +291,7 @@ public static class Search
                 throw new ArgumentNullException(nameof(captureSession));
 
             var config = new TrackingConfiguration(
-                _referenceImage,
+                _referenceImages,
                 _confidenceThreshold,
                 _movementThreshold
             );
@@ -246,19 +301,24 @@ public static class Search
         }
 
         /// <summary>
-        /// Releases resources if this builder owns the reference image.
+        /// Releases resources if this builder owns the reference images.
         /// </summary>
         /// <remarks>
-        /// Only disposes the image if it was created by For(string) or For(Bitmap).
-        /// Does NOT dispose if created by For(ReferenceImage) - caller owns it.
+        /// Only disposes images if they were created by For(string) or For(Bitmap).
+        /// Does NOT dispose if created by For(ReferenceImage) or ForAny() - caller owns them.
         /// </remarks>
         public void Dispose()
         {
             if (_disposed)
                 return;
 
-            if (_ownsImage)
-                _referenceImage?.Dispose();
+            if (_ownsImages)
+            {
+                foreach (var image in _referenceImages)
+                {
+                    image?.Dispose();
+                }
+            }
 
             _disposed = true;
         }

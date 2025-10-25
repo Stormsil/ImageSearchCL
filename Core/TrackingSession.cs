@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Drawing;
 using ImageSearchCL.API;
 using ImageSearchCL.Infrastructure;
@@ -143,9 +144,9 @@ internal sealed class TrackingSession : IObjectSearch
                         {
                             Infrastructure.DebugOverlay.Instance.Show();
                         }
-                        catch
+                        catch (Exception ex)
                         {
-                            // Ignore overlay errors
+                            Trace.WriteLine($"[TrackingSession] Error showing debug overlay: {ex.Message}");
                         }
                     }
                 }
@@ -223,9 +224,9 @@ internal sealed class TrackingSession : IObjectSearch
                         {
                             Infrastructure.DebugOverlay.Instance.Hide();
                         }
-                        catch
+                        catch (Exception ex)
                         {
-                            // Ignore overlay errors
+                            Trace.WriteLine($"[TrackingSession] Error hiding debug overlay: {ex.Message}");
                         }
                     }
                 }
@@ -406,14 +407,25 @@ internal sealed class TrackingSession : IObjectSearch
                         continue;
                     }
 
-                    // Perform template matching
-                    var matchResult = TemplateMatchingEngine.FindTemplate(
-                        frame,
-                        _configuration.ReferenceImage.Image!,
-                        _configuration.ConfidenceThreshold
-                    );
+                    // Perform template matching - try all templates and use best match
+                    Infrastructure.TemplateMatchingEngine.MatchResult? matchResult = null;
 
-                    // Process detection result
+                    foreach (var template in _configuration.ReferenceImages)
+                    {
+                        var result = TemplateMatchingEngine.FindTemplate(
+                            frame,
+                            template.Image!,
+                            _configuration.ConfidenceThreshold
+                        );
+
+                        // Keep best match (highest confidence)
+                        if (result != null && (matchResult == null || result.Confidence > matchResult.Confidence))
+                        {
+                            matchResult = result;
+                        }
+                    }
+
+                    // Process detection result (best match or null)
                     ProcessDetection(matchResult, DateTime.UtcNow);
                 }
                 finally
@@ -454,7 +466,10 @@ internal sealed class TrackingSession : IObjectSearch
                     {
                         Infrastructure.DebugOverlay.Instance.Clear();
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        Trace.WriteLine($"[TrackingSession] Error clearing debug overlay: {ex.Message}");
+                    }
                 }
             }
             else

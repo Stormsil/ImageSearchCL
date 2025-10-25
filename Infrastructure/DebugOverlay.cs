@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
@@ -102,9 +103,9 @@ internal sealed class DebugOverlay : IDisposable
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Ignore errors
+            Trace.WriteLine($"[DebugOverlay] Error in Show(): {ex.Message}");
         }
     }
 
@@ -147,8 +148,9 @@ internal sealed class DebugOverlay : IDisposable
                 _window.Invalidate();
             }
         }
-        catch
+        catch (Exception ex)
         {
+            Trace.WriteLine($"[DebugOverlay] Error in Clear(): {ex.Message}");
         }
     }
 
@@ -245,8 +247,9 @@ internal sealed class DebugOverlay : IDisposable
                 _window.Invalidate();
             }
         }
-        catch
+        catch (Exception ex)
         {
+            Trace.WriteLine($"[DebugOverlay] Error in RegisterDetection(): {ex.Message}");
         }
     }
 
