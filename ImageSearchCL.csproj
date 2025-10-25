@@ -1,0 +1,59 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <UseWindowsForms>true</UseWindowsForms>
+
+    <!-- NuGet Package Metadata -->
+    <PackageId>ImageSearchCL</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>ImageSearchCL Contributors</Authors>
+    <Company>ImageSearchCL</Company>
+    <Product>ImageSearchCL</Product>
+    <Description>Real-time object tracking library for .NET 8 Windows applications. Event-driven architecture with template matching using OpenCV. Track UI elements, automate interactions, and monitor visual changes with high performance (≥30 FPS) and low latency (&lt;50ms).</Description>
+    <PackageTags>opencv;template-matching;object-tracking;computer-vision;screen-capture;ui-automation;image-search;realtime;windows;dotnet8</PackageTags>
+    <PackageProjectUrl>https://github.com/yourusername/ImageSearchCL</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/yourusername/ImageSearchCL</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <Copyright>Copyright (c) 2025 ImageSearchCL Contributors</Copyright>
+    <PackageReleaseNotes>
+Initial release v1.0.0:
+- Event-driven object tracking (Appeared, Disappeared, Moved events)
+- Blocking wait methods for sequential automation
+- 9 pre-computed anchor points for easy positioning
+- High performance: ≥30 FPS with &lt;50ms latency
+- UI-safe SynchronizationContext marshalling
+- Lock-free frame buffering
+- Images collection for managing multiple reference images
+- Visual debug overlay for development
+- Comprehensive XML documentation
+- Full test coverage (80+ tests)
+    </PackageReleaseNotes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ImageSearchCL.Tests" />
+    <InternalsVisibleTo Include="ImageSearchCL.Benchmarks" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="Demo\**" />
+    <EmbeddedResource Remove="Demo\**" />
+    <None Remove="Demo\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="OpenCvSharp4" Version="4.11.0.20250507" />
+    <PackageReference Include="OpenCvSharp4.Extensions" Version="4.11.0.20250507" />
+    <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.11.0.20250507" />
+    <PackageReference Include="System.Drawing.Common" Version="9.0.10" />
+  </ItemGroup>
+
+</Project>
