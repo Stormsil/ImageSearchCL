@@ -181,6 +181,13 @@ internal static class TemplateMatchingEngine
 
         Cv2.MatchTemplate(frameMat, templateMat, result, TemplateMatchModes.CCoeffNormed);
 
+        // Validate Mat type before unsafe code (CCoeffNormed always returns CV_32FC1, but verify for safety)
+        if (result.Type() != MatType.CV_32FC1)
+        {
+            throw new InvalidOperationException(
+                $"Match result is not in the expected 32-bit float format. Expected CV_32FC1, got {result.Type()}.");
+        }
+
         // Find all matches above threshold
         var matches = new List<(OpenCvSharp.Point location, double confidence)>();
 

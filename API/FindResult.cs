@@ -29,7 +29,7 @@ namespace ImageSearchCL.API;
 /// Immutability:
 /// All properties are read-only to ensure thread-safety and prevent accidental mutation.
 /// </remarks>
-public sealed class FindResult : IEquatable<FindResult>
+public class FindResult : IEquatable<FindResult>
 {
     /// <summary>
     /// Gets the X-coordinate of the top-left corner of the detected object.

@@ -409,9 +409,12 @@ internal sealed class TrackingSession : IObjectSearch
 
                     // Perform template matching - try all templates and use best match
                     Infrastructure.TemplateMatchingEngine.MatchResult? matchResult = null;
+                    ReferenceImage? matchedTemplate = null;
+                    int matchedTemplateIndex = -1;
 
-                    foreach (var template in _configuration.ReferenceImages)
+                    for (int i = 0; i < _configuration.ReferenceImages.Length; i++)
                     {
+                        var template = _configuration.ReferenceImages[i];
                         var result = TemplateMatchingEngine.FindTemplate(
                             frame,
                             template.Image!,
@@ -422,11 +425,13 @@ internal sealed class TrackingSession : IObjectSearch
                         if (result != null && (matchResult == null || result.Confidence > matchResult.Confidence))
                         {
                             matchResult = result;
+                            matchedTemplate = template;
+                            matchedTemplateIndex = i;
                         }
                     }
 
                     // Process detection result (best match or null)
-                    ProcessDetection(matchResult, DateTime.UtcNow);
+                    ProcessDetection(matchResult, matchedTemplate, matchedTemplateIndex, DateTime.UtcNow);
                 }
                 finally
                 {
@@ -450,7 +455,11 @@ internal sealed class TrackingSession : IObjectSearch
     /// <summary>
     /// Processes a detection result and updates state/emits events.
     /// </summary>
-    private void ProcessDetection(TemplateMatchingEngine.MatchResult? matchResult, DateTime timestamp)
+    private void ProcessDetection(
+        TemplateMatchingEngine.MatchResult? matchResult,
+        ReferenceImage? matchedTemplate,
+        int matchedTemplateIndex,
+        DateTime timestamp)
     {
         lock (_stateLock)
         {
@@ -474,15 +483,34 @@ internal sealed class TrackingSession : IObjectSearch
             }
             else
             {
-                // Object visible - create FindResult
-                var findResult = new FindResult(
-                    matchResult.X,
-                    matchResult.Y,
-                    matchResult.Width,
-                    matchResult.Height,
-                    matchResult.Confidence,
-                    timestamp
-                );
+                // Object visible - create FindResult or MultiFindResult
+                FindResult findResult;
+
+                // Use MultiFindResult if multiple templates are being tracked
+                if (_configuration.ReferenceImages.Length > 1 && matchedTemplate != null)
+                {
+                    findResult = new MultiFindResult(
+                        matchResult.X,
+                        matchResult.Y,
+                        matchResult.Width,
+                        matchResult.Height,
+                        matchResult.Confidence,
+                        timestamp,
+                        matchedTemplate,
+                        matchedTemplateIndex
+                    );
+                }
+                else
+                {
+                    findResult = new FindResult(
+                        matchResult.X,
+                        matchResult.Y,
+                        matchResult.Width,
+                        matchResult.Height,
+                        matchResult.Confidence,
+                        timestamp
+                    );
+                }
 
                 HandleVisible(findResult);
             }
@@ -493,14 +521,33 @@ internal sealed class TrackingSession : IObjectSearch
         {
             try
             {
-                var result = new FindResult(
-                    matchResult.X,
-                    matchResult.Y,
-                    matchResult.Width,
-                    matchResult.Height,
-                    matchResult.Confidence,
-                    timestamp
-                );
+                FindResult result;
+
+                // Use MultiFindResult if multiple templates are being tracked
+                if (_configuration.ReferenceImages.Length > 1 && matchedTemplate != null)
+                {
+                    result = new MultiFindResult(
+                        matchResult.X,
+                        matchResult.Y,
+                        matchResult.Width,
+                        matchResult.Height,
+                        matchResult.Confidence,
+                        timestamp,
+                        matchedTemplate,
+                        matchedTemplateIndex
+                    );
+                }
+                else
+                {
+                    result = new FindResult(
+                        matchResult.X,
+                        matchResult.Y,
+                        matchResult.Width,
+                        matchResult.Height,
+                        matchResult.Confidence,
+                        timestamp
+                    );
+                }
 
                 Infrastructure.DebugOverlay.Instance.RegisterDetection(
                     result,

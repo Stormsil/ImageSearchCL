@@ -126,6 +126,59 @@ public static class Search
     }
 
     /// <summary>
+    /// Begins a fluent search configuration for multiple reference image files (multi-template tracking).
+    /// </summary>
+    /// <param name="imagePaths">Array of image file paths to track (tries each one).</param>
+    /// <returns>
+    /// SearchBuilder for fluent configuration.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown if <paramref name="imagePaths"/> is null.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown if <paramref name="imagePaths"/> is empty or contains null/empty elements.
+    /// </exception>
+    /// <exception cref="FileNotFoundException">
+    /// Thrown if any file does not exist.
+    /// </exception>
+    /// <remarks>
+    /// Template matching tries each image and returns the best match above the confidence threshold.
+    ///
+    /// Use cases:
+    /// - UI element states: Search.ForAny("button_normal.png", "button_hover.png", "button_disabled.png")
+    /// - Locale variants: Search.ForAny("en_button.png", "ru_button.png", "zh_button.png")
+    /// - Theme variations: Search.ForAny("light_theme.png", "dark_theme.png")
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// using var session = Search.ForAny("button_normal.png", "button_hover.png", "button_disabled.png")
+    ///     .WithConfidence(0.85)
+    ///     .In(captureSession);
+    ///
+    /// session.Appeared += (s, r) =>
+    /// {
+    ///     if (r is MultiFindResult multi)
+    ///     {
+    ///         Console.WriteLine($"Button found in state #{multi.MatchedTemplateIndex}");
+    ///     }
+    /// };
+    /// session.Start();
+    /// </code>
+    /// </example>
+    public static SearchBuilder ForAny(params string[] imagePaths)
+    {
+        if (imagePaths == null)
+            throw new ArgumentNullException(nameof(imagePaths));
+        if (imagePaths.Length == 0)
+            throw new ArgumentException("At least one image path is required.", nameof(imagePaths));
+        if (imagePaths.Any(path => string.IsNullOrWhiteSpace(path)))
+            throw new ArgumentException("Image paths array contains null or empty elements.", nameof(imagePaths));
+
+        var referenceImages = imagePaths.Select(path => ReferenceImage.FromFile(path)).ToArray();
+        return new SearchBuilder(referenceImages, ownsImages: true);
+    }
+
+    /// <summary>
     /// Begins a fluent search configuration for multiple reference images (multi-template tracking).
     /// </summary>
     /// <param name="referenceImages">Array of reference images to track (tries each one).</param>
@@ -175,14 +228,122 @@ public static class Search
     }
 
     /// <summary>
+    /// Begins a fluent one-time search for a template image file.
+    /// </summary>
+    /// <param name="imagePath">Path to the template image file.</param>
+    /// <returns>
+    /// SearchFindBuilder for fluent configuration.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown if <paramref name="imagePath"/> is null.
+    /// </exception>
+    /// <exception cref="FileNotFoundException">
+    /// Thrown if file does not exist.
+    /// </exception>
+    /// <example>
+    /// <code>
+    /// using var screenshot = CaptureScreen();
+    /// var result = Search.Find("button.png")
+    ///     .WithConfidence(0.85)
+    ///     .In(screenshot);
+    ///
+    /// if (result != null)
+    /// {
+    ///     Console.WriteLine($"Found at {result.Center}");
+    /// }
+    /// </code>
+    /// </example>
+    public static SearchFindBuilder Find(string imagePath)
+    {
+        if (imagePath == null)
+            throw new ArgumentNullException(nameof(imagePath));
+
+        return new SearchFindBuilder(imagePath);
+    }
+
+    /// <summary>
+    /// Begins a fluent one-time search for a template image.
+    /// </summary>
+    /// <param name="referenceImage">The template to search for.</param>
+    /// <returns>
+    /// SearchFindBuilder for fluent configuration.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown if <paramref name="referenceImage"/> is null.
+    /// </exception>
+    /// <remarks>
+    /// The caller retains ownership of the ReferenceImage and must dispose it.
+    /// </remarks>
+    public static SearchFindBuilder Find(ReferenceImage referenceImage)
+    {
+        if (referenceImage == null)
+            throw new ArgumentNullException(nameof(referenceImage));
+
+        return new SearchFindBuilder(referenceImage, ownsImage: false);
+    }
+
+    /// <summary>
+    /// Begins a fluent multi-object search for a template image file.
+    /// </summary>
+    /// <param name="imagePath">Path to the template image file.</param>
+    /// <returns>
+    /// SearchFindAllBuilder for fluent configuration.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown if <paramref name="imagePath"/> is null.
+    /// </exception>
+    /// <exception cref="FileNotFoundException">
+    /// Thrown if file does not exist.
+    /// </exception>
+    /// <example>
+    /// <code>
+    /// using var screenshot = CaptureScreen();
+    /// var results = Search.FindAll("icon.png")
+    ///     .WithConfidence(0.80)
+    ///     .WithOverlapThreshold(0.5)
+    ///     .In(screenshot);
+    ///
+    /// Console.WriteLine($"Found {results.Count} icons");
+    /// </code>
+    /// </example>
+    public static SearchFindAllBuilder FindAll(string imagePath)
+    {
+        if (imagePath == null)
+            throw new ArgumentNullException(nameof(imagePath));
+
+        return new SearchFindAllBuilder(imagePath);
+    }
+
+    /// <summary>
+    /// Begins a fluent multi-object search for a template image.
+    /// </summary>
+    /// <param name="referenceImage">The template to search for.</param>
+    /// <returns>
+    /// SearchFindAllBuilder for fluent configuration.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown if <paramref name="referenceImage"/> is null.
+    /// </exception>
+    /// <remarks>
+    /// The caller retains ownership of the ReferenceImage and must dispose it.
+    /// </remarks>
+    public static SearchFindAllBuilder FindAll(ReferenceImage referenceImage)
+    {
+        if (referenceImage == null)
+            throw new ArgumentNullException(nameof(referenceImage));
+
+        return new SearchFindAllBuilder(referenceImage, ownsImage: false);
+    }
+
+    /// <summary>
     /// Fluent builder for configuring and creating tracking sessions.
     /// </summary>
     public sealed class SearchBuilder : IDisposable
     {
         private readonly ReferenceImage[] _referenceImages;
         private readonly bool _ownsImages;
-        private double _confidenceThreshold = 0.8;
-        private double _movementThreshold = 5.0;
+        private double? _confidenceThreshold;
+        private double? _movementThreshold;
         private bool _disposed;
 
         internal SearchBuilder(ReferenceImage referenceImage, bool ownsImage)
@@ -290,10 +451,13 @@ public static class Search
             if (captureSession == null)
                 throw new ArgumentNullException(nameof(captureSession));
 
+            var effectiveConfidence = _confidenceThreshold ?? ImageSearchConfiguration.DefaultConfidence;
+            var effectiveMovement = _movementThreshold ?? ImageSearchConfiguration.DefaultMovementThreshold;
+
             var config = new TrackingConfiguration(
                 _referenceImages,
-                _confidenceThreshold,
-                _movementThreshold
+                effectiveConfidence,
+                effectiveMovement
             );
 
             var factory = ObjectSearchFactory.Instance;

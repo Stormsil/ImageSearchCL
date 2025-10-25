@@ -32,6 +32,9 @@ public static class ImageSearchConfiguration
     private static System.Drawing.Color _debugOverlayColor = System.Drawing.Color.Lime;
     private static int _debugOverlayThickness = 2;
     private static IntPtr _debugOverlayWindowHandle = IntPtr.Zero;
+    private static double _defaultConfidence = 0.8;
+    private static double _defaultMovementThreshold = 5.0;
+    private static double _defaultOverlapThreshold = 0.5;
 
     /// <summary>
     /// Gets or sets the SynchronizationContext used for event marshalling.
@@ -273,6 +276,104 @@ public static class ImageSearchConfiguration
     }
 
     /// <summary>
+    /// Gets or sets the default confidence threshold for template matching.
+    /// </summary>
+    /// <value>
+    /// Confidence threshold between 0.0 and 1.0. Default: 0.8 (80%).
+    /// </value>
+    /// <remarks>
+    /// This value is used when WithConfidence() is not explicitly called:
+    /// - Search.For() uses this confidence
+    /// - Search.FindAll() uses this confidence
+    /// - Search.Find() uses this confidence
+    ///
+    /// Recommendations:
+    /// - 0.95-0.99: Very strict (exact match required)
+    /// - 0.85-0.90: Recommended for most cases
+    /// - 0.75-0.80: More lenient (allows slight variations)
+    /// - Below 0.70: High false positive rate
+    ///
+    /// Thread Safety: Property is thread-safe
+    /// </remarks>
+    public static double DefaultConfidence
+    {
+        get => _defaultConfidence;
+        set
+        {
+            if (value < 0.0 || value > 1.0)
+                throw new ArgumentOutOfRangeException(nameof(value), value,
+                    "Confidence must be between 0.0 and 1.0.");
+
+            _defaultConfidence = value;
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets the default movement threshold in pixels.
+    /// </summary>
+    /// <value>
+    /// Movement threshold in pixels. Default: 5.0 pixels.
+    /// </value>
+    /// <remarks>
+    /// This value determines when the Moved event fires.
+    /// Object must move more than this distance to trigger the event.
+    ///
+    /// Used when WithMovementThreshold() is not explicitly called.
+    ///
+    /// Recommendations:
+    /// - 1-3 pixels: Detect small movements (may be noisy)
+    /// - 5-10 pixels: Recommended for most cases (default: 5)
+    /// - 15+ pixels: Only detect significant movements
+    ///
+    /// Thread Safety: Property is thread-safe
+    /// </remarks>
+    public static double DefaultMovementThreshold
+    {
+        get => _defaultMovementThreshold;
+        set
+        {
+            if (value < 0.0)
+                throw new ArgumentOutOfRangeException(nameof(value), value,
+                    "Movement threshold must be non-negative.");
+
+            _defaultMovementThreshold = value;
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets the default overlap threshold for FindAll() operations.
+    /// </summary>
+    /// <value>
+    /// Overlap threshold between 0.0 and 1.0. Default: 0.5 (50% overlap).
+    /// </value>
+    /// <remarks>
+    /// This value controls Non-Maximum Suppression in FindAll().
+    /// When two detections overlap more than this threshold, only the one
+    /// with higher confidence is kept.
+    ///
+    /// Used when WithOverlapThreshold() is not explicitly called.
+    ///
+    /// Recommendations:
+    /// - 0.1-0.3: Very strict (keep detections with minimal overlap)
+    /// - 0.5: Recommended for most cases (default)
+    /// - 0.7-0.9: More lenient (allow significant overlap)
+    ///
+    /// Thread Safety: Property is thread-safe
+    /// </remarks>
+    public static double DefaultOverlapThreshold
+    {
+        get => _defaultOverlapThreshold;
+        set
+        {
+            if (value < 0.0 || value > 1.0)
+                throw new ArgumentOutOfRangeException(nameof(value), value,
+                    "Overlap threshold must be between 0.0 and 1.0.");
+
+            _defaultOverlapThreshold = value;
+        }
+    }
+
+    /// <summary>
     /// Resets all configuration settings to their default values.
     /// </summary>
     /// <remarks>
@@ -284,6 +385,9 @@ public static class ImageSearchConfiguration
     /// - DebugOverlayColor: Lime
     /// - DebugOverlayThickness: 2
     /// - DebugOverlayWindowHandle: IntPtr.Zero
+    /// - DefaultConfidence: 0.8
+    /// - DefaultMovementThreshold: 5.0
+    /// - DefaultOverlapThreshold: 0.5
     ///
     /// Thread Safety: This method is thread-safe
     /// </remarks>
@@ -296,6 +400,9 @@ public static class ImageSearchConfiguration
         _debugOverlayColor = System.Drawing.Color.Lime;
         _debugOverlayThickness = 2;
         _debugOverlayWindowHandle = IntPtr.Zero;
+        _defaultConfidence = 0.8;
+        _defaultMovementThreshold = 5.0;
+        _defaultOverlapThreshold = 0.5;
     }
 }
 
