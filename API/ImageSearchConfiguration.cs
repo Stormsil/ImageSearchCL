@@ -8,7 +8,7 @@ namespace ImageSearchCL.API;
 /// - Event synchronization behavior
 /// - Default timeout values
 /// - Template matching mode
-/// - Debug settings (visual overlay - future)
+/// - Debug overlay visualization
 ///
 /// Settings are static and affect all tracking sessions.
 /// Thread-safe: All properties use atomic reads/writes.
@@ -31,6 +31,7 @@ public static class ImageSearchConfiguration
     private static bool _enableDebugOverlay = false;
     private static System.Drawing.Color _debugOverlayColor = System.Drawing.Color.Lime;
     private static int _debugOverlayThickness = 2;
+    private static IntPtr _debugOverlayWindowHandle = IntPtr.Zero;
 
     /// <summary>
     /// Gets or sets the SynchronizationContext used for event marshalling.
@@ -171,36 +172,29 @@ public static class ImageSearchConfiguration
     /// Default: <c>false</c>.
     /// </value>
     /// <remarks>
-    /// When enabled, a transparent overlay window will display:
-    /// - Bounding boxes around detected objects
-    /// - Confidence scores as percentages
-    /// - Center anchor points with crosshairs
+    /// When enabled, a transparent overlay window displays bounding boxes around detected objects.
     ///
     /// The overlay is:
+    /// - Transparent with per-pixel alpha blending
     /// - Click-through (does not block mouse input)
     /// - Always on top
     /// - Fullscreen across all monitors
     ///
-    /// Performance Impact:
-    /// - Minimal (~1-2% CPU for rendering at 10 FPS)
-    /// - Only active when tracking sessions are running
+    /// Uses Windows Layered Window API (UpdateLayeredWindow) for:
+    /// - Hardware accelerated rendering
+    /// - No flickering
+    /// - Minimal CPU impact (~1% at 30 FPS)
     ///
-    /// Thread Safety:
-    /// - Property is thread-safe
-    ///
-    /// Use Cases:
-    /// - Development and debugging
-    /// - Tuning confidence thresholds
-    /// - Visualizing template matching results
+    /// Thread Safety: Property is thread-safe
     /// </remarks>
     /// <example>
     /// <code>
     /// // Enable debug overlay for development
     /// ImageSearchConfiguration.EnableDebugOverlay = true;
-    /// ImageSearchConfiguration.DebugOverlayColor = Color.Lime;
+    /// ImageSearchConfiguration.DebugOverlayColor = Color.Red;
     /// ImageSearchConfiguration.DebugOverlayThickness = 3;
     ///
-    /// // Start tracking - bounding boxes will be visible
+    /// // Bounding boxes will appear when tracking
     /// var session = Search.For("button.png").In(capture);
     /// session.Start();
     /// </code>
@@ -212,21 +206,17 @@ public static class ImageSearchConfiguration
     }
 
     /// <summary>
-    /// Gets or sets the color used for debug overlay rendering.
+    /// Gets or sets the color for debug overlay bounding boxes.
     /// </summary>
     /// <value>
-    /// Color for bounding boxes and text.
-    /// Default: Lime (bright green).
+    /// Color for bounding box lines. Default: Lime (bright green).
     /// </value>
     /// <remarks>
-    /// Recommended colors for visibility:
-    /// - Color.Lime (bright green) - default, high visibility
-    /// - Color.Red - for errors or critical detections
-    /// - Color.Cyan - for secondary detections
-    /// - Color.Yellow - for warnings
-    ///
-    /// Thread Safety:
-    /// - Property is thread-safe
+    /// Recommended colors:
+    /// - Color.Lime - bright green, high visibility (default)
+    /// - Color.Red - for errors or warnings
+    /// - Color.Cyan - for secondary objects
+    /// - Color.Yellow - for highlighted objects
     /// </remarks>
     public static System.Drawing.Color DebugOverlayColor
     {
@@ -238,17 +228,13 @@ public static class ImageSearchConfiguration
     /// Gets or sets the line thickness for debug overlay bounding boxes.
     /// </summary>
     /// <value>
-    /// Thickness in pixels.
-    /// Default: 2.
+    /// Thickness in pixels (1-10). Default: 2.
     /// </value>
     /// <remarks>
     /// Recommended values:
-    /// - 1: Thin lines, less intrusive
-    /// - 2: Default, good balance
+    /// - 1: Thin lines
+    /// - 2: Default, good visibility
     /// - 3-4: Thick lines, high visibility
-    ///
-    /// Thread Safety:
-    /// - Property is thread-safe
     /// </remarks>
     public static int DebugOverlayThickness
     {
@@ -264,6 +250,29 @@ public static class ImageSearchConfiguration
     }
 
     /// <summary>
+    /// Gets or sets the window handle for coordinate conversion in debug overlay.
+    /// </summary>
+    /// <value>
+    /// Window handle (IntPtr) for coordinate conversion, or IntPtr.Zero for screen coordinates (default).
+    /// Default: IntPtr.Zero.
+    /// </value>
+    /// <remarks>
+    /// When capturing a specific window (not full screen), set this to the window handle
+    /// so the overlay can convert window-relative coordinates to screen coordinates.
+    ///
+    /// Use cases:
+    /// - IntPtr.Zero: Capturing full screen (default)
+    /// - Window handle: Capturing specific window (e.g., Notepad, Chrome)
+    ///
+    /// Thread Safety: Property is thread-safe
+    /// </remarks>
+    public static IntPtr DebugOverlayWindowHandle
+    {
+        get => _debugOverlayWindowHandle;
+        set => _debugOverlayWindowHandle = value;
+    }
+
+    /// <summary>
     /// Resets all configuration settings to their default values.
     /// </summary>
     /// <remarks>
@@ -274,13 +283,9 @@ public static class ImageSearchConfiguration
     /// - EnableDebugOverlay: false
     /// - DebugOverlayColor: Lime
     /// - DebugOverlayThickness: 2
+    /// - DebugOverlayWindowHandle: IntPtr.Zero
     ///
-    /// Thread Safety:
-    /// - This method is thread-safe
-    ///
-    /// Use Cases:
-    /// - Testing: Reset between test cases
-    /// - Plugin scenarios: Clean slate for new plugin
+    /// Thread Safety: This method is thread-safe
     /// </remarks>
     public static void Reset()
     {
@@ -290,6 +295,7 @@ public static class ImageSearchConfiguration
         _enableDebugOverlay = false;
         _debugOverlayColor = System.Drawing.Color.Lime;
         _debugOverlayThickness = 2;
+        _debugOverlayWindowHandle = IntPtr.Zero;
     }
 }
 

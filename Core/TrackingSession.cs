@@ -12,17 +12,19 @@ namespace ImageSearchCL.Core;
 /// - Core layer (business logic, state management, event orchestration)
 /// - Implements IObjectSearch public API
 /// - Uses TemplateMatchingEngine (Infrastructure) for detection
+/// - Uses FrameQueue (Infrastructure) for lock-free frame buffering
 /// - Uses ICaptureSession (API) for frame input
 ///
 /// Responsibilities:
 /// - State machine management (NotStarted → Running → Paused → Stopped → Disposed)
-/// - Frame processing pipeline (capture → detect → compare → emit events)
+/// - Frame processing pipeline (capture → queue → detect → compare → emit events)
 /// - Event marshalling to SynchronizationContext (UI-safe)
 /// - Movement detection and filtering (MovementThreshold)
 /// - Visibility state tracking (NotVisible ↔ Visible)
 ///
 /// Threading Model:
-/// - Frame processing happens on background thread (ICaptureSession.FrameReady)
+/// - Capture thread: ICaptureSession.FrameReady enqueues frames to FrameQueue (lock-free, fast)
+/// - Processing thread: Background Task dequeues and processes frames asynchronously
 /// - Events marshalled to SynchronizationContext captured at construction
 /// - State changes are thread-safe (lock-based)
 /// - Properties are thread-safe for reading
@@ -32,20 +34,27 @@ namespace ImageSearchCL.Core;
 /// - Latency: &lt;50ms from frame capture to event emission
 /// - CPU: &lt;5% when object is stationary (idle optimization)
 /// - Memory: &lt;1KB overhead per session (excluding frame buffers)
+/// - Frame dropping: Automatic when processing falls behind (single-slot buffer)
 /// </remarks>
 internal sealed class TrackingSession : IObjectSearch
 {
+    private static int _activeSessionCount = 0;
+    private static readonly object _activeSessionLock = new object();
+
     private readonly ICaptureSession _captureSession;
     private readonly TrackingConfiguration _configuration;
     private readonly SynchronizationContext? _synchronizationContext;
     private readonly object _stateLock = new object();
     private readonly ManualResetEventSlim _visibleEvent = new ManualResetEventSlim(false);
     private readonly ManualResetEventSlim _notVisibleEvent = new ManualResetEventSlim(true);
+    private readonly FrameQueue _frameQueue = new FrameQueue();
 
     private TrackingState _state;
     private ObjectVisibility _visibility;
     private FindResult? _lastResult;
     private bool _disposed;
+    private Task? _processingTask;
+    private CancellationTokenSource? _processingCts;
 
     /// <inheritdoc/>
     public event EventHandler<FindResult>? Appeared;
@@ -115,7 +124,32 @@ internal sealed class TrackingSession : IObjectSearch
                 throw new InvalidOperationException($"Cannot start tracking session in state {_state}. Expected NotStarted.");
 
             ChangeState(TrackingState.Running);
+
+            // Start frame processing task
+            _processingCts = new CancellationTokenSource();
+            _processingTask = Task.Run(() => ProcessingLoop(_processingCts.Token), _processingCts.Token);
+
             _captureSession.Start();
+
+            // Show debug overlay if this is the first active session
+            if (API.ImageSearchConfiguration.EnableDebugOverlay)
+            {
+                lock (_activeSessionLock)
+                {
+                    _activeSessionCount++;
+                    if (_activeSessionCount == 1)
+                    {
+                        try
+                        {
+                            Infrastructure.DebugOverlay.Instance.Show();
+                        }
+                        catch
+                        {
+                            // Ignore overlay errors
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -153,6 +187,49 @@ internal sealed class TrackingSession : IObjectSearch
 
             ChangeState(TrackingState.Stopped);
             _captureSession.Stop();
+
+            // Stop processing task
+            _processingCts?.Cancel();
+        }
+
+        // Wait for processing task to finish (outside lock)
+        try
+        {
+            _processingTask?.Wait(TimeSpan.FromSeconds(2));
+        }
+        catch (AggregateException)
+        {
+            // Ignore cancellation exceptions
+        }
+
+        lock (_stateLock)
+        {
+            _processingCts?.Dispose();
+            _processingCts = null;
+            _processingTask = null;
+
+            // Clear any buffered frames
+            _frameQueue.Clear();
+
+            // Hide debug overlay if this was the last active session
+            if (API.ImageSearchConfiguration.EnableDebugOverlay)
+            {
+                lock (_activeSessionLock)
+                {
+                    _activeSessionCount--;
+                    if (_activeSessionCount == 0)
+                    {
+                        try
+                        {
+                            Infrastructure.DebugOverlay.Instance.Hide();
+                        }
+                        catch
+                        {
+                            // Ignore overlay errors
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -220,6 +297,9 @@ internal sealed class TrackingSession : IObjectSearch
             _captureSession.Dispose();
             _configuration.ReferenceImage.Dispose();
 
+            // Stop processing task
+            _processingCts?.Cancel();
+
             // Signal wait events to unblock any waiting threads
             _visibleEvent.Set();
             _notVisibleEvent.Set();
@@ -228,58 +308,130 @@ internal sealed class TrackingSession : IObjectSearch
 
             _disposed = true;
         }
+
+        // Wait for processing task (outside lock)
+        try
+        {
+            _processingTask?.Wait(TimeSpan.FromSeconds(2));
+        }
+        catch (AggregateException)
+        {
+            // Ignore cancellation exceptions
+        }
+
+        _processingCts?.Dispose();
+        _frameQueue.Dispose();
+
+        // Hide debug overlay if this was the last active session
+        if (API.ImageSearchConfiguration.EnableDebugOverlay)
+        {
+            lock (_activeSessionLock)
+            {
+                _activeSessionCount--;
+                if (_activeSessionCount == 0)
+                {
+                    try
+                    {
+                        Infrastructure.DebugOverlay.Instance.Hide();
+                    }
+                    catch
+                    {
+                        // Ignore overlay errors
+                    }
+                }
+            }
+        }
     }
 
     /// <summary>
     /// Handles incoming frames from the capture session.
     /// </summary>
     /// <remarks>
-    /// Called on background thread (ICaptureSession.FrameReady).
-    /// Processing pipeline:
-    /// 1. Check if tracking is active (Running state)
-    /// 2. Perform template matching
-    /// 3. Update visibility state
-    /// 4. Detect movement
-    /// 5. Emit events (marshalled to SynchronizationContext)
-    /// 6. Dispose frame bitmap
+    /// Called on capture thread (ICaptureSession.FrameReady).
+    /// Quickly enqueues frame to FrameQueue (lock-free, O(1)).
+    /// Frame ownership transferred to queue - do NOT dispose here.
     /// </remarks>
     private void OnFrameReady(object? sender, FrameReadyEventArgs e)
     {
         try
         {
-            // Check if tracking is active
-            TrackingState currentState;
-            lock (_stateLock)
-            {
-                currentState = _state;
-            }
-
-            if (currentState != TrackingState.Running)
-                return; // Paused or stopped, skip processing
-
-            // Clone frame to avoid concurrent access in OpenCvSharp
-            Bitmap frameClone;
-            lock (e.Frame)
-            {
-                frameClone = (Bitmap)e.Frame.Clone();
-            }
-
-            // Perform template matching
-            var matchResult = TemplateMatchingEngine.FindTemplate(
-                frameClone,
-                _configuration.ReferenceImage.Image!,
-                _configuration.ConfidenceThreshold
-            );
-
-            frameClone.Dispose();
-
-            // Process detection result
-            ProcessDetection(matchResult, e.Timestamp);
+            // Enqueue frame to processing queue (lock-free, fast)
+            // Old frame automatically disposed if queue is full
+            _frameQueue.Enqueue(e.Frame);
         }
-        finally
+        catch (ObjectDisposedException)
         {
-            // Always dispose frame (ownership transferred from ICaptureSession)
+            // Queue disposed, session is shutting down
             e.Frame?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Background processing loop that dequeues and processes frames.
+    /// </summary>
+    /// <remarks>
+    /// Runs on background Task thread.
+    /// Dequeues frames from FrameQueue and performs template matching.
+    /// Automatically skips frames when processing falls behind capture rate.
+    /// </remarks>
+    private async Task ProcessingLoop(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                // Dequeue frame from queue (returns null if empty)
+                var frame = _frameQueue.Dequeue();
+
+                if (frame == null)
+                {
+                    // No frame available, wait a bit before checking again
+                    await Task.Delay(1, cancellationToken);
+                    continue;
+                }
+
+                try
+                {
+                    // Check if tracking is active
+                    TrackingState currentState;
+                    lock (_stateLock)
+                    {
+                        currentState = _state;
+                    }
+
+                    if (currentState != TrackingState.Running)
+                    {
+                        // Paused or stopped, skip frame
+                        frame.Dispose();
+                        continue;
+                    }
+
+                    // Perform template matching
+                    var matchResult = TemplateMatchingEngine.FindTemplate(
+                        frame,
+                        _configuration.ReferenceImage.Image!,
+                        _configuration.ConfidenceThreshold
+                    );
+
+                    // Process detection result
+                    ProcessDetection(matchResult, DateTime.UtcNow);
+                }
+                finally
+                {
+                    // Always dispose frame after processing
+                    frame.Dispose();
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected during shutdown
+                break;
+            }
+            catch (ObjectDisposedException)
+            {
+                // Session disposed
+                break;
+            }
         }
     }
 
@@ -294,6 +446,16 @@ internal sealed class TrackingSession : IObjectSearch
             {
                 // Object not visible
                 HandleNotVisible();
+
+                // Clear overlay immediately when object disappears
+                if (API.ImageSearchConfiguration.EnableDebugOverlay)
+                {
+                    try
+                    {
+                        Infrastructure.DebugOverlay.Instance.Clear();
+                    }
+                    catch { }
+                }
             }
             else
             {
@@ -308,6 +470,32 @@ internal sealed class TrackingSession : IObjectSearch
                 );
 
                 HandleVisible(findResult);
+            }
+        }
+
+        // Register detection with debug overlay if enabled
+        if (API.ImageSearchConfiguration.EnableDebugOverlay && matchResult != null)
+        {
+            try
+            {
+                var result = new FindResult(
+                    matchResult.X,
+                    matchResult.Y,
+                    matchResult.Width,
+                    matchResult.Height,
+                    matchResult.Confidence,
+                    timestamp
+                );
+
+                Infrastructure.DebugOverlay.Instance.RegisterDetection(
+                    result,
+                    API.ImageSearchConfiguration.DebugOverlayColor,
+                    API.ImageSearchConfiguration.DebugOverlayThickness,
+                    API.ImageSearchConfiguration.DebugOverlayWindowHandle);
+            }
+            catch
+            {
+                // Ignore overlay errors - don't disrupt tracking
             }
         }
     }

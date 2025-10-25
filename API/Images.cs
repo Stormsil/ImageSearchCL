@@ -307,7 +307,6 @@ public sealed class Images : IDisposable
                     // Skip if already loaded (duplicate name)
                     if (images._images.ContainsKey(normalizedName))
                     {
-                        Console.WriteLine($"[Images] Skipping duplicate name: '{fileName}' from '{Path.GetFileName(filePath)}'");
                         skippedCount++;
                         continue;
                     }
@@ -317,16 +316,13 @@ public sealed class Images : IDisposable
                     images._images.Add(normalizedName, refImage);
                     loadedCount++;
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    // Log warning and continue with next file
-                    Console.WriteLine($"[Images] Warning: Failed to load '{Path.GetFileName(filePath)}': {ex.Message}");
+                    // Skip file that failed to load
                     skippedCount++;
                 }
             }
         }
-
-        Console.WriteLine($"[Images] Loaded {loadedCount} images from '{directoryPath}' ({skippedCount} skipped)");
 
         return images;
     }

@@ -110,11 +110,19 @@ public static class TestWithMyImage
     private static async Task TestWithRealScreen(ReferenceImage refImage, string imageName)
     {
         Console.WriteLine("\n" + new string('─', 60));
-        Console.WriteLine("🖥️  РЕЖИМ РЕАЛЬНОГО ЭКРАНА");
+        Console.WriteLine("🖥️  РЕЖИМ РЕАЛЬНОГО ЗАХВАТА");
         Console.WriteLine(new string('─', 60));
-        Console.WriteLine("\n✅ Используем WindowCaptureCL для захвата экрана!\n");
+        Console.WriteLine("\n✅ Используем WindowCaptureCL для захвата!\n");
 
-        Console.Write("⚙️  Confidence threshold (0.7-0.95, рекомендуется 0.85): ");
+        // Выбор источника захвата
+        Console.WriteLine("📺 Источник захвата:");
+        Console.WriteLine("   1. Весь экран (монитор)");
+        Console.WriteLine("   2. Окно Notepad");
+        Console.Write("\nВыберите (1 или 2, по умолчанию 1): ");
+        var sourceChoice = Console.ReadLine();
+        bool captureNotepad = sourceChoice == "2";
+
+        Console.Write("\n⚙️  Confidence threshold (0.7-0.95, рекомендуется 0.85): ");
         var confidenceInput = Console.ReadLine();
         var confidence = double.TryParse(confidenceInput, out var conf) ? conf : 0.85;
 
@@ -122,10 +130,30 @@ public static class TestWithMyImage
         var durationInput = Console.ReadLine();
         var duration = int.TryParse(durationInput, out var dur) ? dur : 30;
 
+        Console.Write("\n🎨 Показать Debug Overlay (прозрачные рамки на экране)? (y/n, рекомендуется y): ");
+        var enableOverlay = Console.ReadLine()?.ToLower() == "y";
+
+        if (enableOverlay)
+        {
+            ImageSearchCL.API.ImageSearchConfiguration.EnableDebugOverlay = true;
+            ImageSearchCL.API.ImageSearchConfiguration.DebugOverlayColor = System.Drawing.Color.Lime;
+            ImageSearchCL.API.ImageSearchConfiguration.DebugOverlayThickness = 3;
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine("✅ Debug Overlay включен - вы увидите зеленые рамки вокруг найденных объектов!");
+            Console.ResetColor();
+        }
+
         Console.WriteLine("\n" + new string('─', 60));
         Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine("⚠️  ВАЖНО: Убедитесь что кнопка видна на экране!");
-        Console.WriteLine("   Если кнопка на этом же мониторе - сверните консоль после старта.");
+        if (captureNotepad)
+        {
+            Console.WriteLine("⚠️  ВАЖНО: Убедитесь что Notepad запущен и окно видно!");
+        }
+        else
+        {
+            Console.WriteLine("⚠️  ВАЖНО: Убедитесь что кнопка видна на экране!");
+            Console.WriteLine("   Если кнопка на этом же мониторе - сверните консоль после старта.");
+        }
         Console.ResetColor();
         Console.WriteLine(new string('─', 60));
 
@@ -138,102 +166,172 @@ public static class TestWithMyImage
 
         try
         {
-            Console.WriteLine("\n▶️  Запуск захвата экрана...\n");
+            ScreenCaptureAdapter? capture = null;
 
-            // Создаем адаптер WindowCaptureCL
-            using var capture = ScreenCaptureAdapter.FromScreen(monitorIndex: 0, targetFps: 15);
-
-            Console.WriteLine($"📺 Захват монитора: {capture.FrameWidth}x{capture.FrameHeight}");
-            Console.WriteLine($"🎯 Ищем кнопку: {refImage.Width}x{refImage.Height}");
-            Console.WriteLine($"🔧 Confidence: {confidence:P0}");
-            Console.WriteLine($"⏱️  Длительность: {duration} сек\n");
-
-            // Создаем сессию отслеживания
-            using var session = Search.For(refImage)
-                .WithConfidence(confidence)
-                .WithMovementThreshold(5.0)
-                .In(capture);
-
-            var foundCount = 0;
-            var lastFoundTime = DateTime.MinValue;
-
-            session.Appeared += (s, result) =>
+            if (captureNotepad)
             {
-                foundCount++;
-                lastFoundTime = DateTime.Now;
-                Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine($"\n✅ КНОПКА НАЙДЕНА! (находка #{foundCount})");
-                Console.WriteLine($"   📍 Позиция: ({result.X}, {result.Y})");
-                Console.WriteLine($"   🎯 Confidence: {result.Confidence:P1}");
-                Console.WriteLine($"   📐 Размер: {result.Width}x{result.Height}");
-                Console.WriteLine($"   🎯 Центр: ({result.Center.X}, {result.Center.Y})");
-                Console.WriteLine($"   📍 TopLeft: ({result.TopLeft.X}, {result.TopLeft.Y})");
-                Console.WriteLine($"   📍 BottomRight: ({result.BottomRight.X}, {result.BottomRight.Y})");
-                Console.ResetColor();
-            };
+                // Ищем окно Notepad
+                Console.WriteLine("\n🔍 Поиск окна Notepad...");
+                var notepadWindows = WindowFinder.FindAllNotepadWindows();
 
-            session.Disappeared += (s, result) =>
-            {
-                Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine($"\n⚠️  Кнопка исчезла с экрана");
-                Console.ResetColor();
-            };
-
-            session.Moved += (s, e) =>
-            {
-                Console.ForegroundColor = ConsoleColor.Cyan;
-                Console.WriteLine($"🔄 Кнопка переместилась: ({e.OldResult.X},{e.OldResult.Y}) → ({e.NewResult.X},{e.NewResult.Y}), расстояние: {e.Distance:F1}px");
-                Console.ResetColor();
-            };
-
-            session.Start();
-
-            Console.ForegroundColor = ConsoleColor.Green;
-            Console.WriteLine("🔍 Поиск активен... Наблюдаем за экраном...");
-            Console.ResetColor();
-            Console.WriteLine("   (Нажмите Ctrl+C для остановки)\n");
-
-            // Ждем указанное время
-            for (int i = 0; i < duration; i++)
-            {
-                await Task.Delay(1000);
-
-                if (i % 5 == 0 && i > 0)
+                if (notepadWindows.Count == 0)
                 {
-                    var timeSinceFound = foundCount > 0
-                        ? $"(последнее обнаружение {(DateTime.Now - lastFoundTime).TotalSeconds:F0}с назад)"
-                        : "";
-                    Console.WriteLine($"⏱️  {i}с прошло... Найдено: {foundCount} раз {timeSinceFound}");
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine("❌ Notepad не найден! Запустите Notepad и попробуйте снова.");
+                    Console.ResetColor();
+                    return;
                 }
-            }
 
-            session.Stop();
+                IntPtr windowHandle;
+                if (notepadWindows.Count == 1)
+                {
+                    windowHandle = notepadWindows[0].Handle;
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine($"✅ Найдено окно Notepad: \"{notepadWindows[0].Title}\"");
+                    Console.ResetColor();
+                }
+                else
+                {
+                    // Несколько окон Notepad - предлагаем выбрать
+                    Console.WriteLine($"\n📋 Найдено {notepadWindows.Count} окон Notepad:");
+                    for (int i = 0; i < notepadWindows.Count; i++)
+                    {
+                        Console.WriteLine($"   {i + 1}. {notepadWindows[i].Title}");
+                    }
+                    Console.Write($"\nВыберите окно (1-{notepadWindows.Count}): ");
+                    var choiceStr = Console.ReadLine();
+                    if (!int.TryParse(choiceStr, out int choice) || choice < 1 || choice > notepadWindows.Count)
+                    {
+                        Console.WriteLine("Неверный выбор. Используется первое окно.");
+                        choice = 1;
+                    }
+                    windowHandle = notepadWindows[choice - 1].Handle;
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine($"✅ Выбрано окно: \"{notepadWindows[choice - 1].Title}\"");
+                    Console.ResetColor();
+                }
 
-            Console.WriteLine("\n" + new string('─', 60));
-            Console.WriteLine("📊 РЕЗУЛЬТАТЫ:");
-            Console.WriteLine(new string('─', 60));
-            Console.WriteLine($"⏱️  Время поиска: {duration} сек");
-            Console.WriteLine($"✅ Обнаружений: {foundCount}");
+                Console.WriteLine("\n▶️  Запуск захвата окна Notepad...\n");
+                capture = ScreenCaptureAdapter.FromWindow(windowHandle, targetFps: 15);
 
-            if (foundCount == 0)
-            {
-                Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine("\n⚠️  Кнопка не найдена.");
-                Console.WriteLine("\n💡 Попробуйте:");
-                Console.WriteLine($"   • Понизить Confidence (попробуйте {Math.Max(0.7, confidence - 0.1):F2})");
-                Console.WriteLine("   • Убедитесь что кнопка видна на экране");
-                Console.WriteLine("   • Проверьте что размер кнопки на экране совпадает с изображением");
-                Console.ResetColor();
+                // Set window handle for overlay coordinate conversion
+                if (enableOverlay)
+                {
+                    ImageSearchCL.API.ImageSearchConfiguration.DebugOverlayWindowHandle = windowHandle;
+                }
             }
             else
             {
+                Console.WriteLine("\n▶️  Запуск захвата экрана...\n");
+                capture = ScreenCaptureAdapter.FromScreen(monitorIndex: 0, targetFps: 15);
+
+                // Reset window handle for screen capture
+                if (enableOverlay)
+                {
+                    ImageSearchCL.API.ImageSearchConfiguration.DebugOverlayWindowHandle = IntPtr.Zero;
+                }
+            }
+
+            using (capture)
+            {
+                Console.WriteLine($"📺 Захват: {capture.FrameWidth}x{capture.FrameHeight}");
+                Console.WriteLine($"🎯 Ищем кнопку: {refImage.Width}x{refImage.Height}");
+                Console.WriteLine($"🔧 Confidence: {confidence:P0}");
+                Console.WriteLine($"⏱️  Длительность: {duration} сек\n");
+
+                // Создаем сессию отслеживания
+                using var session = Search.For(refImage)
+                    .WithConfidence(confidence)
+                    .WithMovementThreshold(5.0)
+                    .In(capture);
+
+                var foundCount = 0;
+                var lastFoundTime = DateTime.MinValue;
+
+                session.Appeared += (s, result) =>
+                {
+                    foundCount++;
+                    lastFoundTime = DateTime.Now;
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine($"\n✅ КНОПКА НАЙДЕНА! (находка #{foundCount})");
+                    Console.WriteLine($"   📍 Позиция: ({result.X}, {result.Y})");
+                    Console.WriteLine($"   🎯 Confidence: {result.Confidence:P1}");
+                    Console.WriteLine($"   📐 Размер: {result.Width}x{result.Height}");
+                    Console.WriteLine($"   🎯 Центр: ({result.Center.X}, {result.Center.Y})");
+                    Console.WriteLine($"   📍 TopLeft: ({result.TopLeft.X}, {result.TopLeft.Y})");
+                    Console.WriteLine($"   📍 BottomRight: ({result.BottomRight.X}, {result.BottomRight.Y})");
+                    Console.ResetColor();
+                };
+
+                session.Disappeared += (s, result) =>
+                {
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine($"\n⚠️  Кнопка исчезла с экрана");
+                    Console.ResetColor();
+                };
+
+                session.Moved += (s, e) =>
+                {
+                    Console.ForegroundColor = ConsoleColor.Cyan;
+                    Console.WriteLine($"🔄 Кнопка переместилась: ({e.OldResult.X},{e.OldResult.Y}) → ({e.NewResult.X},{e.NewResult.Y}), расстояние: {e.Distance:F1}px");
+                    Console.ResetColor();
+                };
+
+                session.Start();
+
                 Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine("\n✅ УСПЕХ! Кнопка успешно обнаружена на экране!");
-                Console.WriteLine("\n💡 Что дальше:");
-                Console.WriteLine("   • Используйте result.Center для клика мышью");
-                Console.WriteLine("   • Используйте другие anchor points для точного позиционирования");
-                Console.WriteLine($"   • Текущий Confidence ({confidence:P0}) работает хорошо");
+                Console.WriteLine("🔍 Поиск активен... Наблюдаем за экраном...");
                 Console.ResetColor();
+                Console.WriteLine("   (Нажмите Ctrl+C для остановки)\n");
+
+                // Ждем указанное время
+                for (int i = 0; i < duration; i++)
+                {
+                    await Task.Delay(1000);
+
+                    if (i % 5 == 0 && i > 0)
+                    {
+                        var timeSinceFound = foundCount > 0
+                            ? $"(последнее обнаружение {(DateTime.Now - lastFoundTime).TotalSeconds:F0}с назад)"
+                            : "";
+                        Console.WriteLine($"⏱️  {i}с прошло... Найдено: {foundCount} раз {timeSinceFound}");
+                    }
+                }
+
+                session.Stop();
+
+                // Отключить overlay
+                if (enableOverlay)
+                {
+                    ImageSearchCL.API.ImageSearchConfiguration.EnableDebugOverlay = false;
+                }
+
+                Console.WriteLine("\n" + new string('─', 60));
+                Console.WriteLine("📊 РЕЗУЛЬТАТЫ:");
+                Console.WriteLine(new string('─', 60));
+                Console.WriteLine($"⏱️  Время поиска: {duration} сек");
+                Console.WriteLine($"✅ Обнаружений: {foundCount}");
+
+                if (foundCount == 0)
+                {
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine("\n⚠️  Кнопка не найдена.");
+                    Console.WriteLine("\n💡 Попробуйте:");
+                    Console.WriteLine($"   • Понизить Confidence (попробуйте {Math.Max(0.7, confidence - 0.1):F2})");
+                    Console.WriteLine("   • Убедитесь что кнопка видна на экране");
+                    Console.WriteLine("   • Проверьте что размер кнопки на экране совпадает с изображением");
+                    Console.ResetColor();
+                }
+                else
+                {
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine("\n✅ УСПЕХ! Кнопка успешно обнаружена на экране!");
+                    Console.WriteLine("\n💡 Что дальше:");
+                    Console.WriteLine("   • Используйте result.Center для клика мышью");
+                    Console.WriteLine("   • Используйте другие anchor points для точного позиционирования");
+                    Console.WriteLine($"   • Текущий Confidence ({confidence:P0}) работает хорошо");
+                    Console.ResetColor();
+                }
             }
         }
         catch (Exception ex)
