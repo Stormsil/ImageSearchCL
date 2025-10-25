@@ -1,5 +1,7 @@
 using System.Drawing;
 using ImageSearchCL.API;
+using ImageSearchCL.WindowCapture; // Enable WindowCaptureCL integration
+using WindowCaptureCL;
 
 namespace ImageSearchCL.Demo;
 
@@ -26,7 +28,9 @@ public static class DemoScenarios
 
         Console.WriteLine("\n▶️  Запуск отслеживания...\n");
 
-        using var capture = ScreenCaptureAdapter.FromScreen(0, targetFps: 30);
+        var captureSession = Capture.FromScreen(0);
+        captureSession.UpdateConfiguration(new CaptureConfiguration { MaxFramesPerSecond = 30 });
+        using var capture = captureSession;
         using var session = Search.For(templates[0].Image)
             .WithConfidence(0.85)
             .In(capture);
@@ -91,7 +95,9 @@ public static class DemoScenarios
 
         Console.WriteLine("\n▶️  Запуск непрерывного мониторинга...\n");
 
-        using var capture = ScreenCaptureAdapter.FromScreen(0, targetFps: 10); // Lower FPS for FindAll
+        var captureSession = Capture.FromScreen(0);
+        captureSession.UpdateConfiguration(new CaptureConfiguration { MaxFramesPerSecond = 10 });
+        using var capture = captureSession; // Lower FPS for FindAll
         var cts = new CancellationTokenSource();
         var monitoringTask = Task.Run(async () =>
         {
@@ -195,7 +201,9 @@ public static class DemoScenarios
 
         Console.WriteLine("\n▶️  Запуск отслеживания...\n");
 
-        using var capture = ScreenCaptureAdapter.FromScreen(0, targetFps: 30);
+        var captureSession = Capture.FromScreen(0);
+        captureSession.UpdateConfiguration(new CaptureConfiguration { MaxFramesPerSecond = 30 });
+        using var capture = captureSession;
         using var session = Search.For(templates[0].Image)
             .WithConfidence(confidence)
             .WithMovementThreshold(5.0)
@@ -306,7 +314,9 @@ public static class DemoScenarios
 
         Console.WriteLine("\n▶️  Запуск мультишаблонного поиска...\n");
 
-        using var capture = ScreenCaptureAdapter.FromScreen(0, targetFps: 30);
+        var captureSession = Capture.FromScreen(0);
+        captureSession.UpdateConfiguration(new CaptureConfiguration { MaxFramesPerSecond = 30 });
+        using var capture = captureSession;
         using var session = Search.ForAny(templates.Select(t => t.Image).ToArray())
             .WithConfidence(confidence)
             .WithMovementThreshold(5.0)
@@ -443,7 +453,9 @@ public static class DemoScenarios
 
         Console.WriteLine("\n▶️  Запуск захвата окна...\n");
 
-        using var capture = ScreenCaptureAdapter.FromWindow(windowHandle, targetFps: 30);
+        var captureSession = Capture.FromWindow(windowHandle);
+        captureSession.UpdateConfiguration(new CaptureConfiguration { MaxFramesPerSecond = 30 });
+        using var capture = captureSession;
         using var session = Search.For(templates[0].Image)
             .WithConfidence(0.85)
             .WithMovementThreshold(3.0)
@@ -505,7 +517,9 @@ public static class DemoScenarios
         Console.Write("Начать? (y/n): ");
         if (Console.ReadLine()?.ToLower() != "y") return;
 
-        using var capture = ScreenCaptureAdapter.FromScreen(0, targetFps: 30);
+        var captureSession = Capture.FromScreen(0);
+        captureSession.UpdateConfiguration(new CaptureConfiguration { MaxFramesPerSecond = 30 });
+        using var capture = captureSession;
         using var session = Search.For(templates[0].Image)
             .WithConfidence(0.85)
             .In(capture);

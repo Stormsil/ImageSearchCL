@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ImageSearchCL.csproj" />
+    <ProjectReference Include="..\ImageSearchCL.WindowCapture\ImageSearchCL.WindowCapture.csproj" />
   </ItemGroup>
 
   <ItemGroup>

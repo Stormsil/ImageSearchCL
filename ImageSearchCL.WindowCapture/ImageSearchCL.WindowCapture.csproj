@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <UseWindowsForms>true</UseWindowsForms>
+
+    <!-- NuGet Package Metadata -->
+    <PackageId>ImageSearchCL.WindowCapture</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>ImageSearchCL Contributors</Authors>
+    <Description>Integration package for ImageSearchCL with WindowCaptureCL. Provides seamless screen capture integration.</Description>
+    <PackageTags>imagesearchcl;windowcapturecl;integration;screen-capture</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ImageSearchCL.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="WindowCaptureCL">
+      <HintPath>..\Demo\WindowCaptureCL.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>

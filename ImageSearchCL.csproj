@@ -48,6 +48,9 @@ Initial release v1.0.0:
     <Compile Remove="Demo\**" />
     <EmbeddedResource Remove="Demo\**" />
     <None Remove="Demo\**" />
+    <Compile Remove="ImageSearchCL.WindowCapture\**" />
+    <EmbeddedResource Remove="ImageSearchCL.WindowCapture\**" />
+    <None Remove="ImageSearchCL.WindowCapture\**" />
   </ItemGroup>
 
   <ItemGroup>
